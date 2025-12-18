@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Real-Time Pen Angle Estimation</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: white; }
+        .container { margin-top: 50px; }
+        img { border: 5px solid #333; border-radius: 8px; max-width: 90%; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Pen Angle Detector (YOLOv8 + PCA)</h1>
+        <p>Streaming from Webcam...</p>
+        <img src="{{ url_for('video_feed') }}" alt="Video Stream">
+    </div>
+</body>
+</html>
