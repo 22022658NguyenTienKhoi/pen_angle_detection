@@ -20,13 +20,52 @@ def process_frame(img):
         if result.masks is None:
             continue
 
-        for mask_data in result.masks.data:
+        # Get bounding boxes if available
+        boxes = result.boxes if result.boxes is not None else []
+
+        for idx, mask_data in enumerate(result.masks.data):
             # 2. Prepare Mask
             mask = mask_data.cpu().numpy()
             mask = cv2.resize(mask, (img.shape[1], img.shape[0]))
             binary_mask = (mask > 0.5).astype(np.uint8) * 255
 
-            # 3. Add Green Segment Overlay
+            # 3. Draw Bounding Box and Coordinates
+            if idx < len(boxes):
+                box = boxes[idx]
+                x1, y1, x2, y2 = map(int, box.xyxy[0].cpu().numpy())
+
+                # Draw bounding box rectangle (green)
+                cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+                # Draw corner coordinate markers
+                corner_size = 5
+                # Top-left corner
+                cv2.circle(img, (x1, y1), corner_size, (255, 0, 0), -1)
+                cv2.putText(img, f"({x1},{y1})", (x1 + 5, y1 - 5),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1, cv2.LINE_AA)
+
+                # Top-right corner
+                cv2.circle(img, (x2, y1), corner_size, (255, 0, 0), -1)
+                cv2.putText(img, f"({x2},{y1})", (x2 - 60, y1 - 5),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1, cv2.LINE_AA)
+
+                # Bottom-left corner
+                cv2.circle(img, (x1, y2), corner_size, (255, 0, 0), -1)
+                cv2.putText(img, f"({x1},{y2})", (x1 + 5, y2 + 15),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1, cv2.LINE_AA)
+
+                # Bottom-right corner
+                cv2.circle(img, (x2, y2), corner_size, (255, 0, 0), -1)
+                cv2.putText(img, f"({x2},{y2})", (x2 - 60, y2 + 15),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 1, cv2.LINE_AA)
+
+                # Draw center point with coordinates
+                cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                cv2.circle(img, (cx, cy), 5, (0, 0, 255), -1)
+                cv2.putText(img, f"Center({cx},{cy})", (cx + 10, cy),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1, cv2.LINE_AA)
+
+            # 4. Add Green Segment Overlay
             # This fills the pen area with a solid green color on the overlay
             overlay[binary_mask > 0] = [0, 255, 0] 
 
