@@ -7,13 +7,97 @@
         body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: white; }
         .container { margin-top: 50px; }
         img { border: 5px solid #333; border-radius: 8px; max-width: 90%; }
+        .controls {
+            margin: 20px auto;
+            padding: 15px;
+            background: #2a2a2a;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        .controls label {
+            margin-right: 10px;
+            font-size: 14px;
+        }
+        .controls input[type="number"] {
+            width: 80px;
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #333;
+            color: white;
+            font-size: 14px;
+        }
+        .controls button {
+            padding: 8px 20px;
+            margin-left: 10px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .controls button:hover {
+            background: #45a049;
+        }
+        .status {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Pen Angle Detector (YOLOv8 + PCA)</h1>
         <p>Streaming from Webcam...</p>
+
+        <div class="controls">
+            <label for="interval">Detection Interval (seconds):</label>
+            <input type="number" id="interval" min="0" max="10" step="0.1" value="0">
+            <button onclick="applyInterval()">Apply</button>
+            <div class="status" id="status">Current: 0s (every frame)</div>
+        </div>
+
         <img src="{{ url_for('video_feed') }}" alt="Video Stream">
     </div>
+
+    <script>
+        // Load current interval on page load
+        window.onload = function() {
+            fetch('/interval')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('interval').value = data.interval;
+                    updateStatus(data.interval);
+                });
+        };
+
+        function applyInterval() {
+            const interval = parseFloat(document.getElementById('interval').value) || 0;
+
+            fetch('/interval', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ interval: interval })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateStatus(data.interval);
+                }
+            })
+            .catch(error => {
+                document.getElementById('status').textContent = 'Error updating interval';
+            });
+        }
+
+        function updateStatus(interval) {
+            const status = interval === 0
+                ? 'Current: 0s (every frame)'
+                : `Current: ${interval}s between detections`;
+            document.getElementById('status').textContent = status;
+        }
+    </script>
 </body>
 </html>

@@ -1,11 +1,15 @@
 import cv2
 import numpy as np
 import logging
+import time
 from datetime import datetime
-from flask import Flask, render_template, Response
+from flask import Flask, render_template, Response, request, jsonify
 from ultralytics import YOLO
 
 app = Flask(__name__)
+
+# Configurable detection interval (in seconds)
+detection_interval = 0.0  # 0 means process every frame
 
 # Setup logging
 logging.basicConfig(
@@ -181,20 +185,42 @@ def process_frame(img):
     return img
 
 def gen_frames():
+    global detection_interval
     cap = cv2.VideoCapture(1)
+    last_detection_time = 0
+
     while True:
         success, frame = cap.read()
         if not success:
             break
-        else:
+
+        current_time = time.time()
+
+        # Check if enough time has passed since last detection
+        if detection_interval == 0 or (current_time - last_detection_time) >= detection_interval:
             processed_frame = process_frame(frame)
-            ret, buffer = cv2.imencode('.jpg', processed_frame)
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            last_detection_time = current_time
+        else:
+            # Show raw frame with coordinate system only (no detection)
+            processed_frame = frame.copy()
+            draw_coordinate_system(processed_frame, origin=(50, 50))
+
+        ret, buffer = cv2.imencode('.jpg', processed_frame)
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
 
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/interval', methods=['GET', 'POST'])
+def set_interval():
+    global detection_interval
+    if request.method == 'POST':
+        data = request.get_json()
+        detection_interval = float(data.get('interval', 0))
+        return jsonify({'success': True, 'interval': detection_interval})
+    return jsonify({'interval': detection_interval})
 
 @app.route('/video_feed')
 def video_feed():
