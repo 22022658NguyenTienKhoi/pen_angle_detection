@@ -1,81 +1,361 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <title>Real-Time Pen Angle Estimation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HUST | Pen Angle Estimation</title>
+    <!-- Font chữ và Icon -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
     <style>
-        body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: white; }
-        .container { margin-top: 50px; }
-        img { border: 5px solid #333; border-radius: 8px; max-width: 90%; }
-        .controls {
-            margin: 20px auto;
-            padding: 15px;
-            background: #2a2a2a;
+        :root {
+            --primary-red: #dc2626;
+            --dark-red: #991b1b;
+            --light-bg: #f8fafc;
+            --white: #ffffff;
+            --text-dark: #1e293b;
+            --text-gray: #64748b;
+            --border-color: #e2e8f0;
+            --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--light-bg);
+            color: var(--text-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Navbar */
+        nav {
+            padding: 0.8rem 3%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--white);
+            border-bottom: 4px solid var(--primary-red);
+            box-shadow: var(--shadow);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .school-logo {
+            height: 65px;
+            width: auto;
+        }
+
+        .system-title h1 {
+            font-size: 1.5rem;
+            color: var(--dark-red);
+            font-weight: 800;
+            letter-spacing: 0.5px;
+        }
+
+        .authors-info {
+            text-align: right;
+            font-size: 0.85rem;
+            border-left: 2px solid var(--border-color);
+            padding-left: 20px;
+            line-height: 1.5;
+        }
+
+        .authors-info b { color: var(--primary-red); }
+
+        /* Container chính - Tăng độ rộng lên 1550px */
+        .main-container {
+            max-width: 1550px;
+            width: 95%;
+            margin: 1.5rem auto;
+            padding: 0;
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 340px; /* Video rộng hơn, sidebar hẹp lại */
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1100px) {
+            .main-container { grid-template-columns: 1fr; }
+        }
+
+        /* Vùng Video */
+        .video-section {
+            background: var(--white);
+            border-radius: 12px;
+            padding: 1.2rem;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .video-wrapper {
+            position: relative;
             border-radius: 8px;
-            display: inline-block;
+            overflow: hidden;
+            background: #000;
+            /* Giữ tỷ lệ khung hình chuẩn nhưng cho phép mở rộng hết cỡ */
+            width: 100%;
+            aspect-ratio: 16/9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #ddd;
         }
-        .controls label {
-            margin-right: 10px;
-            font-size: 14px;
+
+        .video-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
-        .controls input[type="number"] {
-            width: 80px;
-            padding: 8px;
-            border: 1px solid #444;
-            border-radius: 4px;
-            background: #333;
+
+        .status-indicator {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(0, 0, 0, 0.7);
             color: white;
-            font-size: 14px;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 10;
         }
-        .controls button {
-            padding: 8px 20px;
-            margin-left: 10px;
-            background: #4CAF50;
+
+        .dot {
+            height: 10px;
+            width: 10px;
+            background-color: #22c55e;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #22c55e;
+        }
+        .dot.off { background-color: #ef4444; box-shadow: 0 0 10px #ef4444; }
+
+        /* Bảng điều khiển */
+        .controls-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
+        }
+
+        .card {
+            background: var(--white);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+
+        .card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-dark);
+        }
+
+        .card h3 i { color: var(--primary-red); }
+
+        .power-btn {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            font-size: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .btn-on { background-color: #22c55e; color: white; }
+        .btn-off { background-color: #ef4444; color: white; }
+        .power-btn:hover { opacity: 0.9; }
+
+        .input-group { margin-bottom: 1rem; }
+        label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: var(--text-gray);
+        }
+
+        input[type="number"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            outline: none;
+        }
+
+        .update-btn {
+            width: 100%;
+            background: var(--primary-red);
             color: white;
             border: none;
-            border-radius: 4px;
+            padding: 0.75rem;
+            border-radius: 8px;
+            font-weight: 600;
             cursor: pointer;
-            font-size: 14px;
         }
-        .controls button:hover {
-            background: #45a049;
+
+        .status-box {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #fff1f2;
+            border-left: 4px solid var(--primary-red);
+            border-radius: 4px;
         }
-        .status {
-            margin-top: 10px;
-            font-size: 12px;
-            color: #888;
+
+        .tag-container { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .tag { background: #fee2e2; color: #b91c1c; padding: 4px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+
+        footer {
+            margin-top: auto;
+            background: var(--white);
+            padding: 1rem;
+            text-align: center;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-gray);
+            font-size: 0.85rem;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Pen Angle Detector (YOLOv8 + PCA)</h1>
-        <p>Streaming from Webcam...</p>
 
-        <div class="controls">
-            <label for="interval">Detection Interval (seconds):</label>
-            <input type="number" id="interval" min="0" max="10" step="0.1" value="0">
-            <button onclick="applyInterval()">Apply</button>
-            <div class="status" id="status">Current: 0s (every frame)</div>
+    <nav>
+        <div class="nav-left">
+            <!-- Thay bằng logo HUST -->
+            <img src="https://upload.wikimedia.org/wikipedia/vi/e/ef/Logo_%C4%90%E1%BA%A1i_h%E1%BB%8Dc_B%C3%A1ch_Khoa_H%C3%A0_N%E1%BB%99i.svg" alt="HUST" class="school-logo">
+            <div class="system-title">
+                <h1>ĐẠI HỌC BÁCH KHOA HÀ NỘI</h1>
+            </div>
+        </div>
+        <div class="authors-info">
+            <div>SV1: <b>Đinh Quang Huy</b> - 20226201</div>
+            <div>SV2: <b>Nguyễn Phong Thái</b> - 20226249</div>
+        </div>
+    </nav>
+
+    <div class="main-container">
+        <!-- Bên trái: Video Stream - Đã tăng độ rộng -->
+        <div class="video-section">
+            <div class="video-wrapper">
+                <div class="status-indicator">
+                    <span class="dot" id="live-dot"></span> <span id="live-text">HỆ THỐNG ĐANG CHẠY</span>
+                </div>
+                <!-- Flask Video Feed -->
+                <img src="{{ url_for('video_feed') }}" id="main-feed" alt="Đang kết nối luồng xử lý AI...">
+            </div>
+
+            <div style="margin-top: 1.2rem;">
+                <h2 style="color: var(--dark-red); margin-bottom: 0.6rem; font-size: 1.4rem;">
+                <p style="color: var(--text-gray); font-size: 0.95rem; line-height: 1.6;">
+
+                </p>
+            </div>
         </div>
 
-        <img src="{{ url_for('video_feed') }}" alt="Video Stream">
+        <!-- Bên phải: Điều khiển -->
+        <div class="controls-panel">
+            <div class="card">
+                <h3><i class="fas fa-cog"></i> Điều Khiển</h3>
+
+                <button id="toggleBtn" class="power-btn btn-off" onclick="toggleSystem()">
+                    <i class="fas fa-power-off"></i> Dừng Hệ Thống
+                </button>
+
+                <div class="input-group">
+                    <label>Chu kỳ quét (giây)</label>
+                    <input type="number" id="interval" min="0" max="10" step="0.1" value="0">
+                </div>
+                <button class="update-btn" onclick="applyInterval()">
+                    Cập nhật thông số
+                </button>
+
+                <div class="status-box">
+                    <small style="color: var(--primary-red); font-weight: 800; text-transform: uppercase; font-size: 0.7rem;">Trạng thái vận hành</small>
+                    <div id="status-text" style="font-size: 0.9rem; margin-top: 4px;">Đang chạy: Real-time</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3><i class="fas fa-layer-group"></i> Thông Số Kỹ Thuật</h3>
+                <div class="tag-container">
+                    <span class="tag">YOLOv8</span>
+                    <span class="tag">OpenCV</span>
+                    <span class="tag">PCA</span>
+                    <span class="tag">Flask</span>
+                    <span class="tag">Python</span>
+                </div>
+                <p style="font-size: 0.8rem; color: var(--text-gray); margin-top: 15px;">
+                    Mô hình được tối ưu hóa cho môi trường phòng Lab.
+                </p>
+            </div>
+        </div>
     </div>
 
+    <footer>
+        <p>&copy; 2025 - Bài tập lớn Xử lý ảnh | <b>Đinh Quang Huy - Nguyễn Phong Thái</b></p>
+    </footer>
+
     <script>
-        // Load current interval on page load
-        window.onload = function() {
-            fetch('/interval')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('interval').value = data.interval;
-                    updateStatus(data.interval);
-                });
-        };
+        let isSystemOn = true;
+
+        function toggleSystem() {
+            const btn = document.getElementById('toggleBtn');
+            const liveDot = document.getElementById('live-dot');
+            const liveText = document.getElementById('live-text');
+            const videoFeed = document.getElementById('main-feed');
+
+            isSystemOn = !isSystemOn;
+
+            if (isSystemOn) {
+                btn.innerHTML = '<i class="fas fa-power-off"></i> Dừng Hệ Thống';
+                btn.className = 'power-btn btn-off';
+                liveDot.className = 'dot';
+                liveText.innerText = 'HỆ THỐNG ĐANG CHẠY';
+                videoFeed.style.opacity = '1';
+            } else {
+                btn.innerHTML = '<i class="fas fa-play"></i> Bật Hệ Thống';
+                btn.className = 'power-btn btn-on';
+                liveDot.className = 'dot off';
+                liveText.innerText = 'HỆ THỐNG ĐÃ DỪNG';
+                videoFeed.style.opacity = '0.3';
+            }
+
+            fetch('/toggle_system', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active: isSystemOn })
+            });
+        }
 
         function applyInterval() {
             const interval = parseFloat(document.getElementById('interval').value) || 0;
-
             fetch('/interval', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -83,21 +363,18 @@
             })
             .then(response => response.json())
             .then(data => {
-                if (data.success) {
-                    updateStatus(data.interval);
-                }
-            })
-            .catch(error => {
-                document.getElementById('status').textContent = 'Error updating interval';
+                const statusText = interval === 0 ? 'Đang chạy: Real-time' : `Trễ: ${interval} giây`;
+                document.getElementById('status-text').textContent = statusText;
             });
         }
 
-        function updateStatus(interval) {
-            const status = interval === 0
-                ? 'Current: 0s (every frame)'
-                : `Current: ${interval}s between detections`;
-            document.getElementById('status').textContent = status;
-        }
+        window.onload = function() {
+            fetch('/interval')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('interval').value = data.interval;
+                });
+        };
     </script>
 </body>
 </html>

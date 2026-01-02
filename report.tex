@@ -1,0 +1,343 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+\usepackage{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\geometry{left=2.5cm, right=2.5cm, top=2cm, bottom=2cm}
+
+\begin{document}
+
+\section*{Chương III: Xây dựng và Huấn luyện Mô hình}
+
+\subsection{3.1 Kiến trúc mô hình mạng Neural}
+Trong đề tài này, nhóm sử dụng kiến trúc **YOLOv8-seg (You Only Look Once - Segmentation)** phiên bản Nano (\texttt{yolov8n-seg}). Đây là mô hình tiên tiến trong lĩnh vực thị giác máy tính, hỗ trợ đồng thời hai nhiệm vụ: phát hiện vật thể (Object Detection) và phân đoạn thực thể (Instance Segmentation).
+
+Kiến trúc của YOLOv8-seg bao gồm các thành phần chính:
+\begin{itemize}
+    \item \textbf{Backbone (CSPDarknet53):} Trích xuất đặc trưng từ ảnh đầu vào sử dụng cơ chế Cross Stage Partial Network để giảm thiểu tính toán nhưng vẫn giữ được độ chính xác.
+    \item \textbf{Neck (PANet):} Tăng cường khả năng truyền tải thông tin ngữ nghĩa qua các tầng feature map có kích thước khác nhau.
+    \item \textbf{Head (Decoupled Head):} Tách biệt việc dự đoán lớp (classification) và hộp giới hạn (regression). Đặc biệt, nhánh Segmentation sử dụng cơ chế \textit{Proto Module} để sinh ra các mặt nạ nguyên mẫu (mask prototypes).
+\end{itemize}
+
+Lý do lựa chọn phiên bản Nano (\texttt{n-seg}):
+\begin{itemize}
+    \item Tốc độ xử lý thời gian thực (Real-time inference) cao, phù hợp với bài toán nhận diện qua webcam.
+    \item Số lượng tham số ít, giảm thiểu hiện tượng Overfitting khi tập dữ liệu huấn luyện còn hạn chế (361 ảnh train).
+\end{itemize}
+
+\subsection{3.2 Chiến lược huấn luyện (Training Strategy)}
+
+\subsubsection{Cấu hình phần cứng và môi trường}
+Quá trình huấn luyện được thực hiện trên nền tảng Kaggle với sự hỗ trợ của phần cứng mạnh mẽ để đảm bảo tốc độ hội tụ nhanh nhất:
+\begin{itemize}
+    \item \textbf{GPU:} Sử dụng kỹ thuật huấn luyện song song dữ liệu phân tán (\textbf{DDP - Distributed Data Parallel}) trên \textbf{2 x Tesla T4 (15GB VRAM mỗi card)}.
+    \item \textbf{Framework:} PyTorch 2.6.0+cu124, Ultralytics 8.3.246.
+    \item \textbf{Độ chính xác hỗn hợp (AMP):} Kích hoạt Automatic Mixed Precision để tối ưu hóa bộ nhớ và tăng tốc độ tính toán.
+\end{itemize}
+
+\subsubsection{Tham số huấn luyện (Hyperparameters)}
+Các siêu tham số được tinh chỉnh kỹ lưỡng để tối ưu hóa cho bài toán phân loại bút (Pen Segmentation) với cấu hình chi tiết như sau:
+
+\begin{table}[H]
+\centering
+\caption{Cấu hình siêu tham số huấn luyện}
+\label{tab:hyperparams}
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Tham số} & \textbf{Giá trị} & \textbf{Giải thích} \\ \hline
+Model Weights & yolov8n-seg.pt & Transfer Learning từ tập COCO \\ \hline
+Epochs & 500 & Số lượng vòng lặp huấn luyện lớn đảm bảo hội tụ \\ \hline
+Batch Size & 128 & Tận dụng tối đa VRAM của 2 GPU T4 \\ \hline
+Optimizer & Adam & Tối ưu hóa thích nghi (Adaptive Moment Estimation) \\ \hline
+Learning Rate & $10^{-4}$ (0.0001) & $lr0$, kết hợp giảm dần theo hàm Cosine ($cos\_lr$) \\ \hline
+Input Size & 512x512 & Kích thước ảnh đầu vào ($imgsz$) \\ \hline
+Patience & 100 & Dừng sớm nếu không cải thiện sau 100 epochs \\ \hline
+Classes ($n\_c$) & 2 & Tùy chỉnh đầu ra cho 2 lớp (Pen/Background) \\ \hline
+\end{tabular}
+\end{table}
+
+\subsubsection{Tăng cường dữ liệu (Data Augmentation)}
+Do số lượng ảnh đầu vào hạn chế (361 ảnh), kỹ thuật Data Augmentation đóng vai trò then chốt để mô hình học được các đặc trưng bất biến. Các kỹ thuật được áp dụng bao gồm:
+\begin{itemize}
+    \item \textbf{Mosaic (1.0):} Ghép 4 ảnh lại với nhau, giúp model nhận diện đối tượng ở các tỷ lệ khác nhau.
+    \item \textbf{Albumentations:} Tích hợp các bộ lọc Blur, MedianBlur, ToGray và CLAHE để mô phỏng các điều kiện ánh sáng và nhiễu camera thực tế.
+    \item \textbf{Hình học:} Flip Left-Right (0.5), HSV tuning (Hue 0.015, Saturation 0.7).
+\end{itemize}
+
+\subsection{3.3 Thuật toán Hậu xử lý và Thị giác máy tính}
+Sau khi mô hình YOLOv8-seg trả về mặt nạ phân đoạn (binary mask), nhóm áp dụng các thuật toán thị giác máy tính truyền thống để trích xuất thông tin hình học chi tiết (góc quay và hướng đầu bút).
+
+\subsubsection{1. Làm sạch mặt nạ (Morphological Operations)}
+Mặt nạ dự đoán có thể chứa nhiễu ở viền. Chúng tôi sử dụng phép co (Erosion) để làm mịn biên dạng:
+\begin{equation}
+    Mask_{clean} = Mask_{raw} \ominus Kernel_{(5\times5)}
+\end{equation}
+
+\subsubsection{2. Xác định hướng bằng PCA (Principal Component Analysis)}
+Để xác định góc nghiêng của chiếc bút, nhóm sử dụng thuật toán Phân tích thành phần chính (PCA) dựa trên tập hợp điểm ảnh của mặt nạ:
+\begin{enumerate}
+    \item Trích xuất tọa độ các điểm thuộc mặt nạ: $P = \{(x_1, y_1), ..., (x_n, y_n)\}$.
+    \item Tính toán ma trận hiệp phương sai (Covariance Matrix) của tập điểm $P$.
+    \item Giải bài toán tìm trị riêng (Eigenvalues) $\lambda_1, \lambda_2$ và vector riêng (Eigenvectors) $v_1, v_2$.
+    \item Vector riêng $v_1$ ứng với trị riêng lớn nhất $\lambda_1$ chính là trục chính (Principal Axis) của chiếc bút. Góc quay $\theta$ được tính bằng:
+    \begin{equation}
+        \theta = \arctan2(v_{1y}, v_{1x}) \times \frac{180}{\pi}
+    \end{equation}
+\end{enumerate}
+
+\subsubsection{3. Xác định đầu bút (Tip Detection Heuristic)}
+Do PCA chỉ cung cấp phương (orientation) mà không xác định chiều (direction), nhóm phát triển thuật toán dựa trên đặc điểm hình học của bút (đầu bút nhỏ hơn thân bút):
+\begin{itemize}
+    \item Chiếu toàn bộ điểm ảnh lên trục chính $v_1$.
+    \item Xác định hai vùng cực trị (hai đầu của bút) trên trục chiếu.
+    \item Tính độ lệch chuẩn (Standard Deviation) của các điểm ảnh theo trục phụ ($v_2$) tại hai vùng này.
+    \item \textbf{Kết luận:} Đầu nào có độ phân tán (độ rộng) nhỏ hơn được xác định là đầu bút (Tip).
+\end{itemize}
+
+\begin{lstlisting}[language=Python, caption=Đoạn code mô tả thuật toán PCA xác định góc]
+# Trich doan tu logic xu ly (Algorithm Snippet)
+cov = np.cov(pts_centered.T)
+eigvals, eigvecs = np.linalg.eig(cov)
+principal_axis = eigvecs[:, np.argmax(eigvals)]
+
+# Tinh goc nghieng
+angle_rad = np.arctan2(principal_axis[1], principal_axis[0])
+angle_deg = np.degrees(angle_rad) % 180
+\end{lstlisting}
+
+\subsection{3.4 Kết quả Huấn luyện Mô hình}
+
+\subsubsection{Đường cong hội tụ (Training Curves)}
+Quá trình huấn luyện được giám sát thông qua các chỉ số loss và metrics qua 500 epochs. Hình \ref{fig:results} thể hiện sự hội tụ của các hàm mất mát và các chỉ số đánh giá.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{training/kaggle/working/runs/segment/yolo8n_runs_new/results.png}
+    \caption{Đường cong huấn luyện: Box Loss, Segmentation Loss, Classification Loss và các metrics mAP, Precision, Recall qua các epochs}
+    \label{fig:results}
+\end{figure}
+
+\textbf{Phân tích kết quả huấn luyện:}
+\begin{itemize}
+    \item \textbf{Box Loss ($\mathcal{L}_{box}$):} Hàm mất mát hộp giới hạn giảm dần và ổn định, cho thấy mô hình học được vị trí chính xác của bút.
+    \item \textbf{Segmentation Loss ($\mathcal{L}_{seg}$):} Hàm mất mát phân đoạn hội tụ nhanh, chứng tỏ mô hình tạo ra mask chính xác.
+    \item \textbf{mAP@50 và mAP@50-95:} Đạt giá trị cao (>0.9), thể hiện độ chính xác cao trong việc phát hiện và phân đoạn bút.
+\end{itemize}
+
+\subsubsection{Ma trận nhầm lẫn (Confusion Matrix)}
+Ma trận nhầm lẫn chuẩn hóa cho thấy khả năng phân loại của mô hình giữa các lớp.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{training/kaggle/working/runs/segment/yolo8n_runs_new/confusion_matrix_normalized.png}
+    \caption{Ma trận nhầm lẫn chuẩn hóa: Tỷ lệ phân loại đúng giữa các lớp Pen và Background}
+    \label{fig:confusion}
+\end{figure}
+
+\subsubsection{Đường cong Precision-Recall cho Mask}
+Đường cong PR thể hiện mối quan hệ giữa Precision và Recall ở các ngưỡng confidence khác nhau.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{training/kaggle/working/runs/segment/yolo8n_runs_new/MaskPR_curve.png}
+    \caption{Đường cong Precision-Recall cho bài toán Segmentation Mask}
+    \label{fig:maskpr}
+\end{figure}
+
+\subsubsection{Mẫu kết quả Validation}
+Hình \ref{fig:val_pred} minh họa kết quả dự đoán trên tập validation, so sánh giữa nhãn thực tế và dự đoán của mô hình.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{training/kaggle/working/runs/segment/yolo8n_runs_new/val_batch0_pred.jpg}
+    \caption{Kết quả dự đoán trên batch validation: Bounding box và Segmentation mask được mô hình sinh ra}
+    \label{fig:val_pred}
+\end{figure}
+
+\subsection{3.5 Pipeline Xử lý Toàn diện}
+
+Hệ thống hoạt động theo pipeline thời gian thực với các giai đoạn được mô tả chi tiết dưới đây.
+
+\subsubsection{Sơ đồ Pipeline}
+\begin{enumerate}
+    \item \textbf{Thu nhận ảnh (Image Acquisition):} Webcam capture frame với độ phân giải $1280 \times 720$ pixels.
+    \item \textbf{Tiền xử lý (Preprocessing):} Resize về kích thước $512 \times 512$, chuẩn hóa pixel values về $[0, 1]$.
+    \item \textbf{Inference YOLOv8-seg:} Forward pass qua mạng neural, output gồm bounding boxes và binary masks.
+    \item \textbf{Hậu xử lý Mask:} Morphological operations để làm sạch nhiễu.
+    \item \textbf{PCA Analysis:} Tính toán hướng và góc nghiêng.
+    \item \textbf{Tip Detection:} Xác định đầu bút dựa trên hình học.
+    \item \textbf{Visualization:} Render kết quả lên frame và stream qua Flask.
+\end{enumerate}
+
+\subsubsection{Chi tiết Thuật toán PCA}
+
+Thuật toán Phân tích Thành phần Chính (PCA) được sử dụng để xác định trục chính của chiếc bút từ tập hợp các điểm ảnh thuộc mask.
+
+\textbf{Đầu vào:} Tập điểm $P = \{(x_i, y_i)\}_{i=1}^{n}$ thuộc binary mask.
+
+\textbf{Bước 1 - Tính trọng tâm (Centroid):}
+\begin{equation}
+    \bar{x} = \frac{1}{n}\sum_{i=1}^{n} x_i, \quad \bar{y} = \frac{1}{n}\sum_{i=1}^{n} y_i
+\end{equation}
+
+\textbf{Bước 2 - Dịch chuyển về gốc tọa độ (Centering):}
+\begin{equation}
+    x'_i = x_i - \bar{x}, \quad y'_i = y_i - \bar{y}
+\end{equation}
+
+\textbf{Bước 3 - Tính ma trận hiệp phương sai (Covariance Matrix):}
+\begin{equation}
+    \mathbf{C} = \frac{1}{n-1} \begin{bmatrix} \sum (x'_i)^2 & \sum x'_i y'_i \\ \sum x'_i y'_i & \sum (y'_i)^2 \end{bmatrix} = \begin{bmatrix} \sigma_{xx} & \sigma_{xy} \\ \sigma_{xy} & \sigma_{yy} \end{bmatrix}
+\end{equation}
+
+\textbf{Bước 4 - Giải bài toán trị riêng (Eigenvalue Problem):}
+\begin{equation}
+    \det(\mathbf{C} - \lambda \mathbf{I}) = 0 \Rightarrow \lambda^2 - (\sigma_{xx} + \sigma_{yy})\lambda + (\sigma_{xx}\sigma_{yy} - \sigma_{xy}^2) = 0
+\end{equation}
+
+Giải phương trình bậc 2 để tìm hai trị riêng $\lambda_1 \geq \lambda_2$:
+\begin{equation}
+    \lambda_{1,2} = \frac{(\sigma_{xx} + \sigma_{yy}) \pm \sqrt{(\sigma_{xx} - \sigma_{yy})^2 + 4\sigma_{xy}^2}}{2}
+\end{equation}
+
+\textbf{Bước 5 - Tính vector riêng (Eigenvectors):}
+Vector riêng $\mathbf{v}_1 = (v_{1x}, v_{1y})$ ứng với $\lambda_1$ là trục chính (Principal Axis).
+
+\textbf{Bước 6 - Tính góc nghiêng:}
+\begin{equation}
+    \theta = \arctan\left(\frac{v_{1y}}{v_{1x}}\right) \times \frac{180}{\pi} \pmod{180}
+\end{equation}
+
+\subsubsection{Thuật toán Xác định Đầu Bút (Tip Detection)}
+
+Do PCA chỉ xác định phương (orientation) mà không xác định chiều (direction), ta cần thuật toán bổ sung dựa trên đặc điểm hình học: \textit{đầu bút có độ rộng nhỏ hơn thân bút}.
+
+\textbf{Mã giả (Pseudocode):}
+\begin{lstlisting}[language=Python, caption=Pseudocode thuật toán Tip Detection]
+Algorithm TipDetection(pts, principal_axis, secondary_axis, mean):
+    Input:
+        pts: centered point cloud of mask pixels
+        principal_axis: v1 from PCA (direction of max variance)
+        secondary_axis: v2 from PCA (perpendicular to v1)
+        mean: centroid coordinates
+    Output:
+        tip_direction: unit vector pointing toward pen tip
+
+    # Step 1: Project all points onto principal axis
+    projections = pts @ principal_axis
+
+    # Step 2: Define endpoint regions (15% from each end)
+    proj_min, proj_max = min(projections), max(projections)
+    proj_range = proj_max - proj_min
+    threshold = 0.15 * proj_range
+
+    # Step 3: Extract points near each endpoint
+    min_end_pts = pts[projections < proj_min + threshold]
+    max_end_pts = pts[projections > proj_max - threshold]
+
+    # Step 4: Measure width at each end (spread along secondary axis)
+    min_end_width = std(min_end_pts @ secondary_axis)
+    max_end_width = std(max_end_pts @ secondary_axis)
+
+    # Step 5: Narrower end is the tip
+    if min_end_width < max_end_width:
+        tip_direction = -principal_axis  # toward min end
+    else:
+        tip_direction = +principal_axis  # toward max end
+
+    return tip_direction
+\end{lstlisting}
+
+\textbf{Giải thích toán học:}
+
+Gọi $\mathbf{v}_1$ và $\mathbf{v}_2$ lần lượt là trục chính và trục phụ từ PCA. Với mỗi điểm $\mathbf{p}_i$, ta tính tọa độ chiếu:
+\begin{equation}
+    t_i = \mathbf{p}'_i \cdot \mathbf{v}_1 \quad \text{(projection onto principal axis)}
+\end{equation}
+
+Định nghĩa hai vùng cực trị:
+\begin{align}
+    \mathcal{R}_{min} &= \{i : t_i < t_{min} + 0.15 \cdot (t_{max} - t_{min})\} \\
+    \mathcal{R}_{max} &= \{i : t_i > t_{max} - 0.15 \cdot (t_{max} - t_{min})\}
+\end{align}
+
+Tính độ rộng (width) tại mỗi vùng theo trục phụ $\mathbf{v}_2$:
+\begin{equation}
+    W_{min} = \sqrt{\frac{1}{|\mathcal{R}_{min}|} \sum_{i \in \mathcal{R}_{min}} (\mathbf{p}'_i \cdot \mathbf{v}_2)^2}, \quad W_{max} = \sqrt{\frac{1}{|\mathcal{R}_{max}|} \sum_{i \in \mathcal{R}_{max}} (\mathbf{p}'_i \cdot \mathbf{v}_2)^2}
+\end{equation}
+
+\textbf{Quy tắc quyết định:}
+\begin{equation}
+    \mathbf{d}_{tip} = \begin{cases}
+        -\mathbf{v}_1 & \text{if } W_{min} < W_{max} \\
+        +\mathbf{v}_1 & \text{otherwise}
+    \end{cases}
+\end{equation}
+
+\subsubsection{Tính toán Tâm (Centroid) bằng Moments}
+
+Tâm của vùng phân đoạn được tính thông qua moments ảnh:
+\begin{equation}
+    M_{pq} = \sum_x \sum_y x^p y^q I(x,y)
+\end{equation}
+
+Trong đó $I(x,y) \in \{0, 1\}$ là giá trị binary mask. Tọa độ tâm:
+\begin{equation}
+    c_x = \frac{M_{10}}{M_{00}}, \quad c_y = \frac{M_{01}}{M_{00}}
+\end{equation}
+
+\subsection{3.6 Hàm Mất mát Huấn luyện (Training Loss Functions)}
+
+YOLOv8-seg sử dụng hàm mất mát đa thành phần:
+\begin{equation}
+    \mathcal{L}_{total} = \lambda_{box} \mathcal{L}_{box} + \lambda_{cls} \mathcal{L}_{cls} + \lambda_{dfl} \mathcal{L}_{dfl} + \lambda_{seg} \mathcal{L}_{seg}
+\end{equation}
+
+Trong đó:
+\begin{itemize}
+    \item $\mathcal{L}_{box}$: Complete IoU Loss (CIoU) cho bounding box regression
+    \begin{equation}
+        \mathcal{L}_{CIoU} = 1 - IoU + \frac{\rho^2(b, b^{gt})}{c^2} + \alpha v
+    \end{equation}
+    với $\rho$ là khoảng cách Euclidean giữa tâm, $c$ là đường chéo bounding box bao, $v$ đo sự khác biệt tỷ lệ khung hình.
+
+    \item $\mathcal{L}_{cls}$: Binary Cross-Entropy cho classification
+    \begin{equation}
+        \mathcal{L}_{BCE} = -\frac{1}{N}\sum_{i=1}^{N} [y_i \log(\hat{y}_i) + (1-y_i)\log(1-\hat{y}_i)]
+    \end{equation}
+
+    \item $\mathcal{L}_{seg}$: Dice Loss cho segmentation mask
+    \begin{equation}
+        \mathcal{L}_{Dice} = 1 - \frac{2|P \cap G| + \epsilon}{|P| + |G| + \epsilon}
+    \end{equation}
+    với $P$ là predicted mask, $G$ là ground truth mask.
+\end{itemize}
+
+\subsection{3.7 Đánh giá Hiệu suất (Performance Metrics)}
+
+Các chỉ số đánh giá chính:
+
+\textbf{Intersection over Union (IoU):}
+\begin{equation}
+    IoU = \frac{|A \cap B|}{|A \cup B|} = \frac{TP}{TP + FP + FN}
+\end{equation}
+
+\textbf{Mean Average Precision (mAP):}
+\begin{equation}
+    mAP@\tau = \frac{1}{|\mathcal{C}|} \sum_{c \in \mathcal{C}} AP_c@\tau
+\end{equation}
+với $\tau$ là ngưỡng IoU (thường là 0.5 hoặc 0.5:0.95).
+
+\textbf{F1-Score:}
+\begin{equation}
+    F1 = 2 \cdot \frac{Precision \cdot Recall}{Precision + Recall} = \frac{2TP}{2TP + FP + FN}
+\end{equation}
+
+\end{document}
